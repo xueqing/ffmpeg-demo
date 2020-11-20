@@ -2,26 +2,22 @@ package main
 
 import (
 	"flag"
-	"os"
+
+	"github.com/xueqing/ffmpeg-demo/logutil"
 
 	"github.com/giorgisio/goav/avformat"
 	"github.com/google/logger"
 )
 
-const logPath = "ffmpeg-demo.log"
-
-var verbose = flag.Bool("verbose", false, "print info level logs to stdout")
-
 func main() {
+	var (
+		verbose = flag.Bool("verbose", false, "print info level logs to stdout")
+		logPath = flag.String("log", "ffmpeg-demo.log", "file path to save log")
+	)
 	flag.Parse()
 
-	file, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0660)
-	if err != nil {
-		logger.Fatalf("failed to open log file error(%v)", err)
-	}
-	defer file.Close()
-
-	defer logger.Init("FFmpegDemoLogger", *verbose, true, file).Close()
+	logutil.Init(*verbose, false, *logPath)
+	defer logutil.Close()
 
 	logger.Info("begin main!")
 	goavTest()
