@@ -28,7 +28,7 @@ func main() {
 }
 
 func goavTest() {
-	filename := "resource/movie.flv"
+	filename := "../../resource/movie.flv"
 
 	// register all formats and codecs
 	avformat.AvRegisterAll()
