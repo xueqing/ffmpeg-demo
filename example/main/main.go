@@ -5,8 +5,8 @@ import (
 
 	"github.com/xueqing/ffmpeg-demo/logutil"
 
-	"github.com/giorgisio/goav/avformat"
 	"github.com/google/logger"
+	"github.com/xueqing/goav/libavformat"
 )
 
 func main() {
@@ -26,13 +26,10 @@ func main() {
 func goavTest() {
 	filename := "../../resource/movie.flv"
 
-	// register all formats and codecs
-	avformat.AvRegisterAll()
-
-	ctx := avformat.AvformatAllocContext()
+	ctx := libavformat.AvformatAllocContext()
 
 	// open video file
-	if avformat.AvformatOpenInput(&ctx, filename, nil, nil) != 0 {
+	if libavformat.AvformatOpenInput(&ctx, filename, nil, nil) != 0 {
 		logger.Warningf("failed to open file(%v)", filename)
 		return
 	}

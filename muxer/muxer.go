@@ -6,15 +6,15 @@ import (
 
 	"github.com/xueqing/ffmpeg-demo/util"
 
-	"github.com/giorgisio/goav/avcodec"
-	"github.com/giorgisio/goav/avformat"
-	"github.com/giorgisio/goav/avutil"
 	"github.com/google/logger"
+	"github.com/xueqing/goav/libavcodec"
+	"github.com/xueqing/goav/libavformat"
+	"github.com/xueqing/goav/libavutil"
 )
 
 // Muxer mux packets
 type Muxer struct {
-	pFmtCtx *avformat.Context
+	pFmtCtx *libavformat.AvFormatContext
 }
 
 // New init a muxer
@@ -36,15 +36,15 @@ func (m *Muxer) Close() {
 func (m *Muxer) Open(strURL, strFmt string) (err error) {
 	// Allocate an AVFormatContext for an output format. avformat_free_context() can be used to
 	// free the context and everything allocated by the framework within it.
-	var pFmt *avformat.OutputFormat
-	if ret := avformat.AvformatAllocOutputContext2(&m.pFmtCtx, pFmt, strFmt, strURL); ret < 0 {
-		err = fmt.Errorf("Muxer Open: alloc output context error(%v)", avutil.ErrorFromCode(ret))
+	var pFmt *libavformat.AvOutputFormat
+	if ret := libavformat.AvformatAllocOutputContext2(&m.pFmtCtx, pFmt, strFmt, strURL); ret < 0 {
+		err = fmt.Errorf("Muxer Open: alloc output context error(%v)", libavutil.ErrorFromCode(ret))
 		return
 	}
 
 	// Create and initialize a AVIOContext for accessing the resource indicated by url.
-	var pIOCtx *avformat.AvIOContext
-	if pIOCtx, err = avformat.AvIOOpen(strURL, avformat.AVIO_FLAG_WRITE); err != nil {
+	var pIOCtx *libavformat.AvIOContext
+	if pIOCtx, err = libavformat.AvIOOpen(strURL, libavformat.AvioFlagWrite); err != nil {
 		return
 	}
 	m.pFmtCtx.SetPb(pIOCtx)
@@ -53,17 +53,17 @@ func (m *Muxer) Open(strURL, strFmt string) (err error) {
 }
 
 // AddStream save stream
-func (m *Muxer) AddStream(pInStream *avformat.Stream) (err error) {
+func (m *Muxer) AddStream(pInStream *libavformat.AvStream) (err error) {
 	var (
-		pCodec     *avcodec.Codec
-		pCodecCtx  *avcodec.Context
-		pOutStream *avformat.Stream
+		pCodec     *libavcodec.AvCodec
+		pCodecCtx  *libavcodec.AvCodecContext
+		pOutStream *libavformat.AvStream
 	)
 
-	codecID := avcodec.CodecId(pInStream.Codec().GetCodecId())
+	codecID := libavcodec.AvCodecID(pInStream.Codec().CodecID())
 	// Find a registered encoder with a matching codec ID.
-	if pCodec = avcodec.AvcodecFindEncoder(codecID); pCodec == nil {
-		err = fmt.Errorf("Muxer AddStream: find encoder by id(%v) error", avcodec.AvcodecGetName(codecID))
+	if pCodec = libavcodec.AvcodecFindEncoder(codecID); pCodec == nil {
+		err = fmt.Errorf("Muxer AddStream: find encoder by id(%v) error", libavcodec.AvcodecGetName(codecID))
 		return
 	}
 
@@ -76,14 +76,14 @@ func (m *Muxer) AddStream(pInStream *avformat.Stream) (err error) {
 	// defer pCodecCtx.AvcodecFreeContext()
 
 	// Add a new stream to a media file.
-	pCodecConvert := (*avformat.AvCodec)(unsafe.Pointer(pCodec))
+	pCodecConvert := (*libavformat.AvCodec)(unsafe.Pointer(pCodec))
 	if pOutStream = m.pFmtCtx.AvformatNewStream(pCodecConvert); pOutStream == nil {
 		err = fmt.Errorf("Muxer AddStream: new stream error")
 		return
 	}
 
 	if ret := pCodecCtx.AvcodecParametersFromContext(pOutStream.CodecParameters()); ret < 0 {
-		err = fmt.Errorf("Muxer AddStream: copy parameters from context error(%v)", avutil.ErrorFromCode(ret))
+		err = fmt.Errorf("Muxer AddStream: copy parameters from context error(%v)", libavutil.ErrorFromCode(ret))
 		return
 	}
 
@@ -97,18 +97,18 @@ func (m *Muxer) AddStream(pInStream *avformat.Stream) (err error) {
 	pOutStream.SetRFrameRate(pInStream.RFrameRate())
 	pOutStream.CodecParameters().AvcodecParametersCopy(pInStream.CodecParameters())
 
-	switch codecType := pInStream.CodecParameters().AvCodecGetType(); codecType {
-	case avformat.AVMEDIA_TYPE_VIDEO:
-		pOutStream.CodecParameters().AvCodecSetHeight(pInStream.CodecParameters().AvCodecGetHeight())
-		pOutStream.CodecParameters().AvCodecSetWidth(pInStream.CodecParameters().AvCodecGetWidth())
-	case avformat.AVMEDIA_TYPE_AUDIO:
-		pOutStream.CodecParameters().AvCodecSetSampleRate(pInStream.CodecParameters().AvCodecGetSampleRate())
-		pOutStream.CodecParameters().AvCodecSetChannels(pInStream.CodecParameters().AvCodecGetChannels())
-		pOutStream.CodecParameters().AvCodecSetChannelLayout(pInStream.CodecParameters().AvCodecGetChannelLayout())
-		pOutStream.CodecParameters().AvCodecSetFormat(pInStream.CodecParameters().AvCodecGetFormat())
+	switch codecType := pInStream.CodecParameters().CodecType(); codecType {
+	case libavformat.AvmediaTypeVideo:
+		pOutStream.CodecParameters().SetHeight(pInStream.CodecParameters().Height())
+		pOutStream.CodecParameters().SetWidth(pInStream.CodecParameters().Width())
+	case libavformat.AvmediaTypeAudio:
+		pOutStream.CodecParameters().SetSampleRate(pInStream.CodecParameters().SampleRate())
+		pOutStream.CodecParameters().SetChannels(pInStream.CodecParameters().Channels())
+		pOutStream.CodecParameters().SetChannelLayout(pInStream.CodecParameters().ChannelLayout())
+		pOutStream.CodecParameters().SetFormat(pInStream.CodecParameters().Format())
 	default:
-		codecTypeConvert := avutil.MediaType(codecType)
-		logger.Warningf("Muxer AddStream: unsupported media type(%v)", avutil.AvGetMediaTypeString(codecTypeConvert))
+		codecTypeConvert := libavutil.AvMediaType(codecType)
+		logger.Warningf("Muxer AddStream: unsupported media type(%v)", libavutil.AvGetMediaTypeString(codecTypeConvert))
 	}
 
 	return
@@ -116,15 +116,15 @@ func (m *Muxer) AddStream(pInStream *avformat.Stream) (err error) {
 
 // WriteHeader save stream header
 func (m *Muxer) WriteHeader(options map[string]interface{}) (err error) {
-	var pDict *avutil.Dictionary
+	var pDict *libavutil.AvDictionary
 	if pDict, err = util.GetAVDictionaryFromMap(options); err != nil {
 		return
 	}
 	defer pDict.AvDictFree()
 
 	// Allocate the stream private data and write the stream header to an output media file.
-	if ret := m.pFmtCtx.AvformatWriteHeader((**avutil.Dictionary)(unsafe.Pointer(&pDict))); ret < 0 {
-		err = fmt.Errorf("Muxer WriteHeader: error(%v)", avutil.ErrorFromCode(ret))
+	if ret := m.pFmtCtx.AvformatWriteHeader((**libavutil.AvDictionary)(unsafe.Pointer(&pDict))); ret < 0 {
+		err = fmt.Errorf("Muxer WriteHeader: error(%v)", libavutil.ErrorFromCode(ret))
 		return
 	}
 
@@ -132,7 +132,7 @@ func (m *Muxer) WriteHeader(options map[string]interface{}) (err error) {
 }
 
 // WritePacket mux a packet
-func (m *Muxer) WritePacket(pPkt *avcodec.Packet) int {
+func (m *Muxer) WritePacket(pPkt *libavcodec.AvPacket) int {
 	// Write a packet to an output media file.
 	return m.pFmtCtx.AvWriteFrame(pPkt)
 }
@@ -145,6 +145,6 @@ func (m *Muxer) WriteTrailer() int {
 }
 
 // Streams get streams
-func (m *Muxer) Streams() ([]*avformat.Stream, error) {
+func (m *Muxer) Streams() ([]*libavformat.AvStream, error) {
 	return m.pFmtCtx.Streams(), nil
 }

@@ -9,12 +9,13 @@ import (
 	"github.com/xueqing/ffmpeg-demo/logutil"
 	"github.com/xueqing/ffmpeg-demo/muxer"
 
-	"github.com/giorgisio/goav/avcodec"
-	"github.com/giorgisio/goav/avformat"
-	"github.com/giorgisio/goav/avutil"
 	"github.com/google/logger"
+	"github.com/xueqing/goav/libavcodec"
+	"github.com/xueqing/goav/libavformat"
+	"github.com/xueqing/goav/libavutil"
 )
 
+// refer ffmpeg/doc/examples/remuxing.c
 func main() {
 	var (
 		verbose = flag.Bool("verbose", true, "print info level logs to stdout")
@@ -28,14 +29,14 @@ func main() {
 		demux *demuxer.Demuxer
 		mux   *muxer.Muxer
 
-		iStreams, oStreams []*avformat.Stream
+		iStreams, oStreams []*libavformat.AvStream
 	)
 	flag.Parse()
 	logutil.Init(*verbose, false, *logPath)
 	defer logutil.Close()
 	logger.Info("begin remux!")
 
-	avutil.AvLogSetLevel(4)
+	libavutil.AvLogSetLevel(48)
 
 	// open demuxer url and muxer url
 	if demux = demuxer.New(); demux == nil {
@@ -82,14 +83,14 @@ func main() {
 	}
 
 	// copy packets
-	pkt := avcodec.AvPacketAlloc()
+	pkt := libavcodec.AvPacketAlloc()
 	for {
 		// get packet from demuxer
 		if ret := demux.ReadPacket(pkt); ret < 0 {
-			if ret == avutil.AvErrorEOF {
+			if ret == libavutil.AvErrorEOF {
 				break
 			}
-			logger.Errorf("demuxer ReadPacket error(%v)", avutil.ErrorFromCode(ret))
+			logger.Errorf("demuxer ReadPacket error(%v)", libavutil.ErrorFromCode(ret))
 			return
 		}
 		defer pkt.AvPacketUnref()
@@ -97,30 +98,33 @@ func main() {
 		// modify pkt attributes
 		iSt := iStreams[pkt.StreamIndex()]
 		oSt := oStreams[pkt.StreamIndex()]
-		if iSt.CodecParameters().AvCodecGetType() == avcodec.MediaType(avformat.AVMEDIA_TYPE_VIDEO) {
+		if iSt.CodecParameters().CodecType() == libavcodec.AvMediaType(libavformat.AvmediaTypeVideo) {
 			logPacket(pkt)
 		}
-		pkt.SetPts(avcodec.AVRescaleQRnd(pkt.Pts(), iSt.TimeBase(), oSt.TimeBase(), avcodec.AV_ROUND_NEAR_INF|avcodec.AV_ROUND_PASS_MINMAX))
-		pkt.SetDts(avcodec.AVRescaleQRnd(pkt.Dts(), iSt.TimeBase(), oSt.TimeBase(), avcodec.AV_ROUND_NEAR_INF|avcodec.AV_ROUND_PASS_MINMAX))
-		pkt.SetDuration(avcodec.AVRescaleQRnd(int64(pkt.Duration()), iSt.TimeBase(), oSt.TimeBase(), avcodec.AV_ROUND_NEAR_INF|avcodec.AV_ROUND_PASS_MINMAX))
-		if iSt.CodecParameters().AvCodecGetType() == avcodec.MediaType(avformat.AVMEDIA_TYPE_VIDEO) {
+		pkt.SetPts(libavcodec.AVRescaleQRnd(pkt.Pts(), iSt.TimeBase(), oSt.TimeBase(),
+			libavcodec.AvRoundNearInf|libavcodec.AvRoundPassMinmax))
+		pkt.SetDts(libavcodec.AVRescaleQRnd(pkt.Dts(), iSt.TimeBase(), oSt.TimeBase(),
+			libavcodec.AvRoundNearInf|libavcodec.AvRoundPassMinmax))
+		pkt.SetDuration(libavcodec.AVRescaleQRnd(int64(pkt.Duration()), iSt.TimeBase(), oSt.TimeBase(),
+			libavcodec.AvRoundNearInf|libavcodec.AvRoundPassMinmax))
+		if iSt.CodecParameters().CodecType() == libavcodec.AvMediaType(libavformat.AvmediaTypeVideo) {
 			logPacket(pkt)
 		}
 
 		// send pkt to muxer
 		if ret := mux.WritePacket(pkt); ret < 0 {
-			logger.Errorf("muxer WritePacket error(%v)", avutil.ErrorFromCode(ret))
+			logger.Errorf("muxer WritePacket error(%v)", libavutil.ErrorFromCode(ret))
 			return
 		}
 	}
 
 	if ret := mux.WriteTrailer(); ret < 0 {
-		logger.Errorf("muxer WriteTrailer error(%v)", avutil.ErrorFromCode(ret))
+		logger.Errorf("muxer WriteTrailer error(%v)", libavutil.ErrorFromCode(ret))
 		return
 	}
 }
 
-func logPacket(pkt *avcodec.Packet) {
+func logPacket(pkt *libavcodec.AvPacket) {
 	logger.Infoln("===========")
 	sli := reflect.SliceHeader{
 		Data: uintptr(unsafe.Pointer(pkt.Data())),
