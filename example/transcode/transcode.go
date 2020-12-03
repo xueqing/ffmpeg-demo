@@ -73,8 +73,8 @@ func openInput(iURL, iFmt string) (err error) {
 	}
 	stCtxs = make(map[int]*streamCtx)
 	for i, st := range iStreams {
-		if st.CodecParameters().CodecType() == libavformat.AvmediaTypeVideo ||
-			st.CodecParameters().CodecType() == libavformat.AvmediaTypeAudio {
+		if st.CodecParameters().CodecType() == libavutil.AvmediaTypeVideo ||
+			st.CodecParameters().CodecType() == libavutil.AvmediaTypeAudio {
 			dec := decoder.New(demux.InFormatContext())
 			if dec == nil {
 				err = fmt.Errorf("New decoder error")
@@ -102,14 +102,14 @@ func openOutput(oURL, oFmt string) (err error) {
 	iStreams, _ := demux.Streams()
 	for idx, st := range iStreams {
 		codecType := st.CodecParameters().CodecType()
-		if codecType == libavformat.AvmediaTypeVideo ||
-			codecType == libavformat.AvmediaTypeAudio {
+		if codecType == libavutil.AvmediaTypeVideo ||
+			codecType == libavutil.AvmediaTypeAudio {
 			outSt, err := mux.AddStream(st)
 			if err != nil {
 				return err
 			}
 			setStreamContext(st, outSt)
-		} else if codecType == libavformat.AvmediaTypeUnknown {
+		} else if codecType == libavutil.AvmediaTypeUnknown {
 			err = fmt.Errorf("openOutput: stream(%d) is of unknown type", idx)
 			return
 		}
@@ -160,7 +160,7 @@ func setStreamContext(pInStream, pOutStream *libavformat.AvStream) (err error) {
 
 	// In this example, we transcode to same properties (picture size, sample rate etc.).
 	// These properties can be changed for output streams easily using filters
-	if pDecCtx.CodecType() == libavformat.AvmediaTypeVideo {
+	if pDecCtx.CodecType() == libavutil.AvmediaTypeVideo {
 		pEncCtx.SetHeight(pDecCtx.Height())
 		pEncCtx.SetWidth(pDecCtx.Width())
 		pEncCtx.SetSampleAspectRatio(pDecCtx.SampleAspectRatio())
@@ -229,7 +229,7 @@ func readAllPackets() (ret int) {
 		pDecCtx := stCtxs[stIdx].dec.DecCodecContext()
 		pFrameConvert := (*libavcodec.AvFrame)(unsafe.Pointer(pFrame))
 		pPkt.AvPacketRescaleTs(iStreams[stIdx].TimeBase(), pDecCtx.TimeBase())
-		if iStreams[stIdx].CodecParameters().CodecType() == libavformat.AvmediaTypeVideo {
+		if iStreams[stIdx].CodecParameters().CodecType() == libavutil.AvmediaTypeVideo {
 			ret = pDecCtx.AvcodecDecodeVideo2(pFrameConvert, &gotFrame, pPkt)
 		} else {
 			ret = pDecCtx.AvcodecDecodeAudio4(pFrameConvert, &gotFrame, pPkt)
@@ -294,7 +294,7 @@ func encoderWriteFrame(pFrame *libavcodec.AvFrame, stIdx int, gotFrame *int) (re
 	encPkt.AvInitPacket()
 	pEncCtx := stCtxs[stIdx].enc.EncCodecContext()
 	iStreams, _ := demux.Streams()
-	if iStreams[stIdx].CodecParameters().CodecType() == libavformat.AvmediaTypeVideo {
+	if iStreams[stIdx].CodecParameters().CodecType() == libavutil.AvmediaTypeVideo {
 		ret = pEncCtx.AvcodecEncodeVideo2(&encPkt, pFrame, gotFrame)
 	} else {
 		ret = pEncCtx.AvcodecEncodeAudio2(&encPkt, pFrame, gotFrame)

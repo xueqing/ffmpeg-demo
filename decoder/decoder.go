@@ -59,7 +59,7 @@ func (d *Decoder) Open(pInStream *libavformat.AvStream) (err error) {
 	}
 
 	// open decoder
-	if pInStream.CodecParameters().CodecType() == libavformat.AvmediaTypeVideo {
+	if pInStream.CodecParameters().CodecType() == libavutil.AvmediaTypeVideo {
 		d.pDecCtx.SetFramerate(d.pInFmtCtx.AvGuessFrameRate(pInStream, nil))
 	}
 	if ret := d.pDecCtx.AvcodecOpen2(pDec, nil); ret < 0 {
