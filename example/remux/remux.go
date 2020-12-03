@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"reflect"
 	"unsafe"
 
@@ -36,7 +37,7 @@ func main() {
 	defer logutil.Close()
 	logger.Info("begin remux!")
 
-	libavutil.AvLogSetLevel(48)
+	// libavutil.AvLogSetLevel(48)
 
 	// open demuxer url and muxer url
 	if demux = demuxer.New(); demux == nil {
@@ -66,8 +67,13 @@ func main() {
 	}
 
 	for _, st := range iStreams {
-		if err := mux.AddStream(st); err != nil {
-			logger.Errorf("muxer AddStream error(%v)", err)
+		outSt, err := mux.AddStream(st)
+		if err != nil {
+			logger.Errorf("Muxer AddStream error(%v)", err)
+			return
+		}
+		if err := setStreamContext(st, outSt); err != nil {
+			logger.Errorf("setStreamContext error(%v)", err)
 			return
 		}
 	}
@@ -99,7 +105,7 @@ func main() {
 		iSt := iStreams[pkt.StreamIndex()]
 		oSt := oStreams[pkt.StreamIndex()]
 		if iSt.CodecParameters().CodecType() == libavcodec.AvMediaType(libavformat.AvmediaTypeVideo) {
-			logPacket(pkt)
+			// logPacket(pkt)
 		}
 		pkt.SetPts(libavcodec.AVRescaleQRnd(pkt.Pts(), iSt.TimeBase(), oSt.TimeBase(),
 			libavcodec.AvRoundNearInf|libavcodec.AvRoundPassMinmax))
@@ -108,7 +114,7 @@ func main() {
 		pkt.SetDuration(libavcodec.AVRescaleQRnd(int64(pkt.Duration()), iSt.TimeBase(), oSt.TimeBase(),
 			libavcodec.AvRoundNearInf|libavcodec.AvRoundPassMinmax))
 		if iSt.CodecParameters().CodecType() == libavcodec.AvMediaType(libavformat.AvmediaTypeVideo) {
-			logPacket(pkt)
+			// logPacket(pkt)
 		}
 
 		// send pkt to muxer
@@ -139,4 +145,58 @@ func logPacket(pkt *libavcodec.AvPacket) {
 	buf := *(*[]byte)(unsafe.Pointer(&sli))
 	logger.Infof("%x", buf[:length])
 	logger.Infoln("===========")
+}
+
+func setStreamContext(pInStream, pOutStream *libavformat.AvStream) (err error) {
+	var (
+		pEnc    *libavcodec.AvCodec
+		pEncCtx *libavcodec.AvCodecContext
+	)
+
+	pDecCtx := (*libavcodec.AvCodecContext)(unsafe.Pointer(pInStream.Codec()))
+	codecID := libavcodec.AvCodecID(pDecCtx.CodecID())
+	// Find a registered encoder with a matching codec ID.
+	if pEnc = libavcodec.AvcodecFindEncoder(codecID); pEnc == nil {
+		err = fmt.Errorf("setStreamContext: find encoder by id(%v) error", libavcodec.AvcodecGetName(codecID))
+		return
+	}
+
+	// Allocate an AVCodecContext and set its fields to default values. The
+	// resulting struct should be freed with avcodec_free_context().
+	if pEncCtx = pEnc.AvcodecAllocContext3(); pEncCtx == nil {
+		err = fmt.Errorf("setStreamContext: alloc encoder context error")
+		return
+	}
+	defer pEncCtx.AvcodecFreeContext()
+
+	// copy parameters from context
+	if ret := pEncCtx.AvcodecParametersFromContext(pOutStream.CodecParameters()); ret < 0 {
+		err = fmt.Errorf("setStreamContext: copy encoder parameters to ouyput stream error(%v)", libavutil.ErrorFromCode(ret))
+		return
+	}
+
+	pOutStream.SetPrivData(pInStream.PrivData())
+	pOutStream.SetTimeBase(pInStream.TimeBase())
+	pOutStream.SetStartTime(pInStream.StartTime())
+	pOutStream.SetDuration(pInStream.Duration())
+	pOutStream.SetNbFrames(pInStream.NbFrames())
+	pOutStream.SetDisposition(pInStream.Disposition())
+	pOutStream.SetDiscard(pInStream.Discard())
+	pOutStream.SetRFrameRate(pInStream.RFrameRate())
+	pOutStream.CodecParameters().AvcodecParametersCopy(pInStream.CodecParameters())
+
+	switch codecType := pInStream.CodecParameters().CodecType(); codecType {
+	case libavformat.AvmediaTypeVideo:
+		pOutStream.CodecParameters().SetHeight(pInStream.CodecParameters().Height())
+		pOutStream.CodecParameters().SetWidth(pInStream.CodecParameters().Width())
+	case libavformat.AvmediaTypeAudio:
+		pOutStream.CodecParameters().SetSampleRate(pInStream.CodecParameters().SampleRate())
+		pOutStream.CodecParameters().SetChannels(pInStream.CodecParameters().Channels())
+		pOutStream.CodecParameters().SetChannelLayout(pInStream.CodecParameters().ChannelLayout())
+		pOutStream.CodecParameters().SetFormat(pInStream.CodecParameters().Format())
+	default:
+		codecTypeConvert := libavutil.AvMediaType(codecType)
+		logger.Warningf("setStreamContext: unsupported media type(%v)", libavutil.AvGetMediaTypeString(codecTypeConvert))
+	}
+	return
 }
