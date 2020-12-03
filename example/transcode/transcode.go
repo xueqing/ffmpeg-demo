@@ -200,18 +200,19 @@ func setStreamContext(pInStream, pOutStream *libavformat.AvStream) (err error) {
 	return
 }
 
-func readAllPackets() (ret int) {
+func readAllPackets() (err error) {
 	var (
 		gotFrame int
 		pFrame   *libavutil.AvFrame
 		pPkt     *libavcodec.AvPacket
+		ret      int
 	)
 
 	pPkt = libavcodec.AvPacketAlloc()
 	iStreams, _ := demux.Streams()
 	for {
 		if ret = demux.ReadPacket(pPkt); ret < 0 {
-			logger.Errorf("demuxer ReadPacket error(%v)", libavutil.ErrorFromCode(ret))
+			err = fmt.Errorf("demuxer ReadPacket error(%v)", libavutil.ErrorFromCode(ret))
 			break
 		}
 		defer pPkt.AvPacketUnref()
@@ -221,8 +222,7 @@ func readAllPackets() (ret int) {
 
 		logger.Infof("encoding frame ...")
 		if pFrame = libavutil.AvFrameAlloc(); pFrame == nil {
-			logger.Errorf("failed to alloc memory for frame")
-			ret = -1
+			err = fmt.Errorf("failed to alloc memory for frame")
 			break
 		}
 
@@ -236,20 +236,19 @@ func readAllPackets() (ret int) {
 		}
 		defer libavutil.AvFrameFree(pFrame)
 		if ret < 0 {
-			logger.Errorf("failed to decode frame")
+			err = fmt.Errorf("failed to decode frame")
 			break
 		}
 		if gotFrame == 1 {
 			pFrame.SetPts(pFrame.BestEffortTimestamp())
-			if ret = encoderWriteFrame(pFrameConvert, stIdx, nil); ret < 0 {
+			if err = encoderWriteFrame(pFrameConvert, stIdx, nil); err != nil {
 				break
 			}
 		}
 	}
 
 	for stIdx := range iStreams {
-		if ret = flushEncoder(stIdx); ret < 0 {
-			logger.Errorf("failed to flush encoder of streamIndex(%v)", stIdx)
+		if err = flushEncoder(stIdx); err != nil {
 			return
 		}
 	}
@@ -258,31 +257,30 @@ func readAllPackets() (ret int) {
 	return
 }
 
-func flushEncoder(stIdx int) (ret int) {
+func flushEncoder(stIdx int) (err error) {
 	var (
 		gotFrame int
 	)
 	if (stCtxs[stIdx].enc.EncCodecContext().Codec().Capabilities() & libavcodec.AvCodecCapDelay) == 0 {
-		return 0
+		return
 	}
 
 	for {
 		logger.Infof("flushEncoder: streamIndex(%v)", stIdx)
-		ret = encoderWriteFrame(nil, stIdx, &gotFrame)
-		if ret < 0 {
+		if err = encoderWriteFrame(nil, stIdx, &gotFrame); err != nil {
 			break
 		}
 		if gotFrame == 0 {
-			return 0
+			return
 		}
 	}
 	return
 }
 
-func encoderWriteFrame(pFrame *libavcodec.AvFrame, stIdx int, gotFrame *int) (ret int) {
+func encoderWriteFrame(pFrame *libavcodec.AvFrame, stIdx int, gotFrame *int) (err error) {
 	var (
-		localGotFrame int
-		encPkt        libavcodec.AvPacket
+		localGotFrame, ret int
+		encPkt             libavcodec.AvPacket
 	)
 
 	if gotFrame == nil {
@@ -300,10 +298,11 @@ func encoderWriteFrame(pFrame *libavcodec.AvFrame, stIdx int, gotFrame *int) (re
 		ret = pEncCtx.AvcodecEncodeAudio2(&encPkt, pFrame, gotFrame)
 	}
 	if ret < 0 {
+		err = fmt.Errorf("encode frame error(%v)", libavutil.ErrorFromCode(ret))
 		return
 	}
 	if (*gotFrame) == 0 {
-		return 0
+		return
 	}
 
 	// prepare packet for muxer
@@ -312,7 +311,10 @@ func encoderWriteFrame(pFrame *libavcodec.AvFrame, stIdx int, gotFrame *int) (re
 
 	// mux encoded frame
 	logger.Infof("mux frame")
-	ret = mux.IntervedWritePacket(&encPkt)
+	if ret = mux.IntervedWritePacket(&encPkt); ret < 0 {
+		err = fmt.Errorf("muxer write packet error(%v)", libavutil.ErrorFromCode(ret))
+		return
+	}
 
 	return
 }
