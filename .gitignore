@@ -1,5 +1,7 @@
 ffmpeg-demo
 *.log
 main
-remux
+example/remux/remux
 *.mp4
+*.flv
+example/transcode/transcode
