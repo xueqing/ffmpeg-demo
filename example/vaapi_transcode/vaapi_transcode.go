@@ -28,7 +28,7 @@ var (
 	stCtxs map[int]*streamCtx
 )
 
-// refer ffmpeg/doc/examples/vaapi_transcode.c
+// refer ffmpeg/doc/examples/vaapi_transcode.c and ffmpeg/doc/examples/transcoding.c
 func main() {
 	var (
 		verbose = flag.Bool("verbose", true, "print info level logs to stdout")
