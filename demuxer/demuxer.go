@@ -2,8 +2,7 @@ package demuxer
 
 import (
 	"fmt"
-
-	"github.com/google/logger"
+	"io"
 
 	"github.com/xueqing/goav/libavcodec"
 	"github.com/xueqing/goav/libavformat"
@@ -78,11 +77,19 @@ func (d *Demuxer) Streams() ([]*libavformat.AvStream, error) {
 }
 
 // ReadPacket get a packet
-func (d *Demuxer) ReadPacket(pPkt *libavcodec.AvPacket) int {
+func (d *Demuxer) ReadPacket(pPkt *libavcodec.AvPacket) (err error) {
 	if d.pInFmtCtx == nil {
-		logger.Errorf("Demuxer ReadPacket: input format context is nil")
-		return -1
+		err = fmt.Errorf("Demuxer ReadPacket: input format context is nil")
+		return
 	}
 	// Return the next frame of a stream.
-	return d.pInFmtCtx.AvReadFrame(pPkt)
+	if ret := d.pInFmtCtx.AvReadFrame(pPkt); ret < 0 {
+		if ret == libavutil.AvErrorEOF {
+			err = io.EOF
+		} else {
+			err = fmt.Errorf("Demuxer ReadPacket: Read frame error(%v)", libavutil.ErrorFromCode(ret))
+		}
+		return
+	}
+	return
 }

@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"reflect"
 	"unsafe"
 
@@ -92,11 +93,11 @@ func main() {
 	pkt := libavcodec.AvPacketAlloc()
 	for {
 		// get packet from demuxer
-		if ret := demux.ReadPacket(pkt); ret < 0 {
-			if ret == libavutil.AvErrorEOF {
+		if err := demux.ReadPacket(pkt); err != nil {
+			if err == io.EOF {
 				break
 			}
-			logger.Errorf("demuxer ReadPacket error(%v)", libavutil.ErrorFromCode(ret))
+			logger.Errorf("demuxer ReadPacket error(%v)", err)
 			return
 		}
 		defer pkt.AvPacketUnref()
@@ -104,7 +105,7 @@ func main() {
 		// modify pkt attributes
 		iSt := iStreams[pkt.StreamIndex()]
 		oSt := oStreams[pkt.StreamIndex()]
-		if iSt.CodecParameters().CodecType() == libavcodec.AvMediaType(libavformat.AvmediaTypeVideo) {
+		if iSt.CodecParameters().CodecType() == libavcodec.AvMediaType(libavutil.AvmediaTypeVideo) {
 			// logPacket(pkt)
 		}
 		pkt.SetPts(libavcodec.AVRescaleQRnd(pkt.Pts(), iSt.TimeBase(), oSt.TimeBase(),
@@ -113,13 +114,13 @@ func main() {
 			libavcodec.AvRoundNearInf|libavcodec.AvRoundPassMinmax))
 		pkt.SetDuration(libavcodec.AVRescaleQRnd(int64(pkt.Duration()), iSt.TimeBase(), oSt.TimeBase(),
 			libavcodec.AvRoundNearInf|libavcodec.AvRoundPassMinmax))
-		if iSt.CodecParameters().CodecType() == libavcodec.AvMediaType(libavformat.AvmediaTypeVideo) {
+		if iSt.CodecParameters().CodecType() == libavcodec.AvMediaType(libavutil.AvmediaTypeVideo) {
 			// logPacket(pkt)
 		}
 
 		// send pkt to muxer
-		if ret := mux.WritePacket(pkt); ret < 0 {
-			logger.Errorf("muxer WritePacket error(%v)", libavutil.ErrorFromCode(ret))
+		if err := mux.WritePacket(pkt); err != nil {
+			logger.Errorf("muxer WritePacket error(%v)", err)
 			return
 		}
 	}
@@ -186,10 +187,10 @@ func setStreamContext(pInStream, pOutStream *libavformat.AvStream) (err error) {
 	pOutStream.CodecParameters().AvcodecParametersCopy(pInStream.CodecParameters())
 
 	switch codecType := pInStream.CodecParameters().CodecType(); codecType {
-	case libavformat.AvmediaTypeVideo:
+	case libavutil.AvmediaTypeVideo:
 		pOutStream.CodecParameters().SetHeight(pInStream.CodecParameters().Height())
 		pOutStream.CodecParameters().SetWidth(pInStream.CodecParameters().Width())
-	case libavformat.AvmediaTypeAudio:
+	case libavutil.AvmediaTypeAudio:
 		pOutStream.CodecParameters().SetSampleRate(pInStream.CodecParameters().SampleRate())
 		pOutStream.CodecParameters().SetChannels(pInStream.CodecParameters().Channels())
 		pOutStream.CodecParameters().SetChannelLayout(pInStream.CodecParameters().ChannelLayout())

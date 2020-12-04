@@ -102,23 +102,31 @@ func (m *Muxer) WriteHeader(options map[string]interface{}) (err error) {
 }
 
 // WritePacket mux a packet
-func (m *Muxer) WritePacket(pPkt *libavcodec.AvPacket) int {
+func (m *Muxer) WritePacket(pPkt *libavcodec.AvPacket) (err error) {
 	if m.pOutFmtCtx == nil {
-		logger.Errorf("Muxer WritePacket: output format context is nil")
-		return -1
+		err = fmt.Errorf("Muxer WritePacket: output format context is nil")
+		return
 	}
 	// Write a packet to an output media file.
-	return m.pOutFmtCtx.AvWriteFrame(pPkt)
+	if ret := m.pOutFmtCtx.AvWriteFrame(pPkt); ret < 0 {
+		err = fmt.Errorf("Muxer WritePacket: Write frame error(%v)", libavutil.ErrorFromCode(ret))
+		return
+	}
+	return
 }
 
 // IntervedWritePacket mux a packet
-func (m *Muxer) IntervedWritePacket(pPkt *libavcodec.AvPacket) int {
+func (m *Muxer) IntervedWritePacket(pPkt *libavcodec.AvPacket) (err error) {
 	if m.pOutFmtCtx == nil {
-		logger.Errorf("Muxer IntervedWritePacket: output format context is nil")
-		return -1
+		err = fmt.Errorf("Muxer IntervedWritePacket: output format context is nil")
+		return
 	}
 	// Write a packet to an output media file.
-	return m.pOutFmtCtx.AvInterleavedWriteFrame(pPkt)
+	if ret := m.pOutFmtCtx.AvInterleavedWriteFrame(pPkt); ret < 0 {
+		err = fmt.Errorf("Muxer IntervedWritePacket: Write frame error(%v)", libavutil.ErrorFromCode(ret))
+		return
+	}
+	return
 }
 
 // WriteTrailer write stream trailer

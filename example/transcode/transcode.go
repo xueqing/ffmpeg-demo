@@ -210,8 +210,7 @@ func readAllPackets() (err error) {
 	pPkt = libavcodec.AvPacketAlloc()
 	iStreams, _ := demux.Streams()
 	for {
-		if ret = demux.ReadPacket(pPkt); ret < 0 {
-			err = fmt.Errorf("demuxer ReadPacket error(%v)", libavutil.ErrorFromCode(ret))
+		if err = demux.ReadPacket(pPkt); err != nil {
 			break
 		}
 		defer pPkt.AvPacketUnref()
@@ -286,10 +285,6 @@ func encoderWriteFrame(pFrame *libavutil.AvFrame, stIdx int, gotFrame *int) (err
 
 	// mux encoded frame
 	logger.Infof("mux frame")
-	if ret := mux.IntervedWritePacket(pEncPkt); ret < 0 {
-		err = fmt.Errorf("encoderWriteFrame: IntervedWritePacket error(%v)", libavutil.ErrorFromCode(ret))
-		return
-	}
-
+	err = mux.IntervedWritePacket(pEncPkt)
 	return
 }
