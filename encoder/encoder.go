@@ -5,6 +5,7 @@ import (
 	"io"
 	"unsafe"
 
+	"github.com/google/logger"
 	"github.com/xueqing/goav/libavcodec"
 	"github.com/xueqing/goav/libavformat"
 	"github.com/xueqing/goav/libavutil"
@@ -12,6 +13,9 @@ import (
 
 // Encoder encode AVFrame to AVPacket
 type Encoder struct {
+	// must call pPkt.AvPacketUnref() after use
+	PacketHandler func(pPkt *libavcodec.AvPacket) (err error)
+
 	pEncCtx   *libavcodec.AvCodecContext
 	pEnc      *libavcodec.AvCodec
 	mediaType libavutil.AvMediaType
@@ -176,5 +180,35 @@ func (e *Encoder) Receive() (pPkt *libavcodec.AvPacket, err error) {
 end:
 	pPkt.AvPacketUnref()
 	pPkt = nil
+	return
+}
+
+// Encode Encode frame to packet
+func (e *Encoder) Encode(pFrame *libavutil.AvFrame) (err error) {
+	if err = e.Send(pFrame); err != nil {
+		if err == io.EOF {
+			err = nil
+		} else {
+			logger.Errorf("Encoder Encode: Send error(%v)", err)
+		}
+		return
+	}
+
+	var pPkt *libavcodec.AvPacket
+	for {
+		if pPkt, err = e.Receive(); err != nil {
+			if err == io.EOF {
+				err = nil
+			} else {
+				logger.Errorf("Encoder Encode: Receive error(%v)", err)
+			}
+			break
+		}
+		if e.PacketHandler != nil {
+			if err = e.PacketHandler(pPkt); err != nil {
+				return
+			}
+		}
+	}
 	return
 }

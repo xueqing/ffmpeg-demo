@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"unsafe"
 
+	"github.com/google/logger"
 	"github.com/xueqing/goav/libavcodec"
 	"github.com/xueqing/goav/libavformat"
 	"github.com/xueqing/goav/libavutil"
@@ -11,6 +12,9 @@ import (
 
 // Decoder decode AVPacket to AVFrame
 type Decoder struct {
+	// must call libavutil.AvFrameFree(pFrame) after use
+	FrameHandler func(pFrame *libavutil.AvFrame) (err error)
+
 	pInFmtCtx *libavformat.AvFormatContext
 	pDecCtx   *libavcodec.AvCodecContext
 	mediaType libavutil.AvMediaType
@@ -189,4 +193,29 @@ end:
 	libavutil.AvFrameFree(pFrame)
 	pFrame = nil
 	return
+}
+
+// Decode Decode packet to frame
+func (d *Decoder) Decode(pPkt *libavcodec.AvPacket) (err error) {
+	if err = d.Send(pPkt); err != nil {
+		logger.Errorf("Decoder Decode: Send error(%v)", err)
+		return
+	}
+
+	var pFrame *libavutil.AvFrame
+	for {
+		pFrame, err = d.Receive()
+		if err != nil {
+			logger.Errorf("Decoder Decode: Receive error(%v)", err)
+			return
+		}
+		if pFrame == nil {
+			return
+		}
+		if d.FrameHandler != nil {
+			if err = d.FrameHandler(pFrame); err != nil {
+				return
+			}
+		}
+	}
 }

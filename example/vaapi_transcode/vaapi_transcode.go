@@ -3,7 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"io"
 	"unsafe"
 
 	"github.com/google/logger"
@@ -201,6 +200,23 @@ func setStreamContext(pInStream, pOutStream *libavformat.AvStream) (err error) {
 	pOutStream.SetTimeBase(pEncCtx.TimeBase())
 
 	stCtxs[pInStream.Index()].enc = enc
+	enc.PacketHandler = func(pPkt *libavcodec.AvPacket) (err error) {
+		stIdx := pInStream.Index()
+		pEncCtx := stCtxs[stIdx].enc.EncCodecContext()
+		pPkt.AvPacketRescaleTs(pEncCtx.TimeBase(), mux.OutFormatContext().Streams()[stIdx].TimeBase())
+		logger.Infof("mux frame")
+		if err = mux.IntervedWritePacket(pPkt); err != nil {
+			logger.Errorf("Muxer IntervedWritePacket error(%v)", err)
+		}
+		return
+	}
+	stCtxs[pInStream.Index()].dec.FrameHandler = func(pFrame *libavutil.AvFrame) (err error) {
+		stIdx := pInStream.Index()
+		if err = stCtxs[stIdx].enc.Encode(pFrame); err != nil {
+			logger.Errorf("Encoder Encode error(%v)", err)
+		}
+		return
+	}
 	return
 }
 
@@ -223,8 +239,8 @@ func readAllPackets() (err error) {
 
 		pDecCtx := stCtxs[stIdx].dec.DecCodecContext()
 		pPkt.AvPacketRescaleTs(iStreams[stIdx].TimeBase(), pDecCtx.TimeBase())
-		if err = decEnc(pPkt); err != nil {
-			logger.Errorf("decEnc error(%v)", err)
+		if err = stCtxs[stIdx].dec.Decode(pPkt); err != nil {
+			logger.Errorf("Decoder Decode error(%v)", err)
 			break
 		}
 	}
@@ -234,78 +250,16 @@ func readAllPackets() (err error) {
 		logger.Infof("flush decoder of streamIndex(%v)", stIdx)
 		pPkt.AvInitPacket()
 		pPkt.SetStreamIndex(stIdx)
-		err = decEnc(pPkt)
+		err = stCtxs[stIdx].dec.Decode(pPkt)
 		pPkt.AvPacketUnref()
 	}
 
 	// flush encoder
 	for stIdx := range iStreams {
 		logger.Infof("flush encoder of streamIndex(%v)", stIdx)
-		encodeWrite(nil, stIdx)
+		err = stCtxs[stIdx].enc.Encode(nil)
 	}
 
 	mux.WriteTrailer()
-	return
-}
-
-func decEnc(pPkt *libavcodec.AvPacket) (err error) {
-	stIdx := pPkt.StreamIndex()
-
-	logger.Infof("decoding packet ...")
-	if err = stCtxs[stIdx].dec.Send(pPkt); err != nil {
-		logger.Errorf("Decoder Send error(%v)", err)
-		return
-	}
-
-	var pFrame *libavutil.AvFrame
-	for {
-		pFrame, err = stCtxs[stIdx].dec.Receive()
-		if err != nil {
-			logger.Errorf("Decoder Receive error(%v)", err)
-			return
-		}
-		if pFrame == nil {
-			return
-		}
-
-		defer libavutil.AvFrameFree(pFrame)
-		if err = encodeWrite(pFrame, stIdx); err != nil {
-			logger.Errorf("encodeWrite error(%v)", err)
-			return
-		}
-	}
-}
-
-func encodeWrite(pFrame *libavutil.AvFrame, stIdx int) (err error) {
-	logger.Infof("encoding frame")
-	if err = stCtxs[stIdx].enc.Send(pFrame); err != nil {
-		if err == io.EOF {
-			err = nil
-		} else {
-			logger.Errorf("Encoder Send error(%v)", err)
-		}
-		return
-	}
-
-	var pEncPkt *libavcodec.AvPacket
-	for {
-		if pEncPkt, err = stCtxs[stIdx].enc.Receive(); err != nil {
-			if err == io.EOF {
-				err = nil
-			} else {
-				logger.Errorf("Encoder Receive error(%v)", err)
-			}
-			break
-		}
-		defer pEncPkt.AvPacketUnref()
-
-		pEncCtx := stCtxs[stIdx].enc.EncCodecContext()
-		pEncPkt.AvPacketRescaleTs(pEncCtx.TimeBase(), mux.OutFormatContext().Streams()[stIdx].TimeBase())
-		logger.Infof("mux frame")
-		if err = mux.IntervedWritePacket(pEncPkt); err != nil {
-			logger.Errorf("Muxer IntervedWritePacket error(%v)", err)
-			break
-		}
-	}
 	return
 }
