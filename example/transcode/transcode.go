@@ -205,7 +205,6 @@ func readAllPackets() (err error) {
 		gotFrame int
 		pFrame   *libavutil.AvFrame
 		pPkt     *libavcodec.AvPacket
-		ret      int
 	)
 
 	pPkt = libavcodec.AvPacketAlloc()
@@ -220,28 +219,16 @@ func readAllPackets() (err error) {
 		stIdx := pPkt.StreamIndex()
 		logger.Infof("demuxer read frame of streamIndex(%v)", stIdx)
 
-		logger.Infof("encoding frame ...")
-		if pFrame = libavutil.AvFrameAlloc(); pFrame == nil {
-			err = fmt.Errorf("failed to alloc memory for frame")
-			break
-		}
-
+		logger.Infof("decoding packet ...")
 		pDecCtx := stCtxs[stIdx].dec.DecCodecContext()
-		pFrameConvert := (*libavcodec.AvFrame)(unsafe.Pointer(pFrame))
 		pPkt.AvPacketRescaleTs(iStreams[stIdx].TimeBase(), pDecCtx.TimeBase())
-		if iStreams[stIdx].CodecParameters().CodecType() == libavutil.AvmediaTypeVideo {
-			ret = pDecCtx.AvcodecDecodeVideo2(pFrameConvert, &gotFrame, pPkt)
-		} else {
-			ret = pDecCtx.AvcodecDecodeAudio4(pFrameConvert, &gotFrame, pPkt)
+		if pFrame, gotFrame, err = stCtxs[stIdx].dec.DecodePacket(pPkt); err != nil {
+			logger.Errorf("error(%v)", err)
+			break
 		}
 		defer libavutil.AvFrameFree(pFrame)
-		if ret < 0 {
-			err = fmt.Errorf("failed to decode frame")
-			break
-		}
 		if gotFrame == 1 {
-			pFrame.SetPts(pFrame.BestEffortTimestamp())
-			if err = encoderWriteFrame(pFrameConvert, stIdx, nil); err != nil {
+			if err = encoderWriteFrame(pFrame, stIdx, nil); err != nil {
 				break
 			}
 		}
@@ -249,6 +236,7 @@ func readAllPackets() (err error) {
 
 	for stIdx := range iStreams {
 		if err = flushEncoder(stIdx); err != nil {
+			logger.Errorf("flush encoder of streamIndex(%v) error(%v)", stIdx, err)
 			return
 		}
 	}
@@ -277,42 +265,29 @@ func flushEncoder(stIdx int) (err error) {
 	return
 }
 
-func encoderWriteFrame(pFrame *libavcodec.AvFrame, stIdx int, gotFrame *int) (err error) {
+func encoderWriteFrame(pFrame *libavutil.AvFrame, stIdx int, gotFrame *int) (err error) {
 	var (
-		localGotFrame, ret int
-		encPkt             libavcodec.AvPacket
+		pEncPkt *libavcodec.AvPacket
 	)
 
-	if gotFrame == nil {
-		gotFrame = &localGotFrame
-	}
-
 	// encode frame
-	logger.Infof("encode frame")
-	encPkt.AvInitPacket()
-	pEncCtx := stCtxs[stIdx].enc.EncCodecContext()
-	iStreams, _ := demux.Streams()
-	if iStreams[stIdx].CodecParameters().CodecType() == libavutil.AvmediaTypeVideo {
-		ret = pEncCtx.AvcodecEncodeVideo2(&encPkt, pFrame, gotFrame)
-	} else {
-		ret = pEncCtx.AvcodecEncodeAudio2(&encPkt, pFrame, gotFrame)
-	}
-	if ret < 0 {
-		err = fmt.Errorf("encode frame error(%v)", libavutil.ErrorFromCode(ret))
+	logger.Infof("encoding frame")
+	pFrameConvert := (*libavcodec.AvFrame)(unsafe.Pointer(pFrame))
+	pEncPkt, err = stCtxs[stIdx].enc.EncodeFrame(pFrameConvert, gotFrame)
+	if err != nil || pEncPkt == nil {
 		return
 	}
-	if (*gotFrame) == 0 {
-		return
-	}
+	defer pEncPkt.AvPacketUnref()
 
 	// prepare packet for muxer
-	encPkt.SetStreamIndex(stIdx)
-	encPkt.AvPacketRescaleTs(pEncCtx.TimeBase(), mux.OutFormatContext().Streams()[stIdx].TimeBase())
+	pEncCtx := stCtxs[stIdx].enc.EncCodecContext()
+	pEncPkt.SetStreamIndex(stIdx)
+	pEncPkt.AvPacketRescaleTs(pEncCtx.TimeBase(), mux.OutFormatContext().Streams()[stIdx].TimeBase())
 
 	// mux encoded frame
 	logger.Infof("mux frame")
-	if ret = mux.IntervedWritePacket(&encPkt); ret < 0 {
-		err = fmt.Errorf("muxer write packet error(%v)", libavutil.ErrorFromCode(ret))
+	if ret := mux.IntervedWritePacket(pEncPkt); ret < 0 {
+		err = fmt.Errorf("encoderWriteFrame: IntervedWritePacket error(%v)", libavutil.ErrorFromCode(ret))
 		return
 	}
 
