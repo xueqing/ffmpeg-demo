@@ -70,44 +70,6 @@ func (e *Encoder) Open(pInStream *libavformat.AvStream) (err error) {
 	return
 }
 
-// EncodeFrame Encode frame to packet
-func (e *Encoder) EncodeFrame(pFrame *libavcodec.AvFrame, gotFrame *int) (pEncPkt *libavcodec.AvPacket, err error) {
-	var (
-		ret, localGotFrame int
-	)
-
-	if gotFrame == nil {
-		gotFrame = &localGotFrame
-	}
-
-	if pEncPkt = libavcodec.AvPacketAlloc(); pEncPkt == nil {
-		err = fmt.Errorf("Encoder EncodeFrame: alloc packet error")
-		return
-	}
-	pEncPkt.AvInitPacket()
-
-	if e.mediaType == libavutil.AvmediaTypeVideo {
-		ret = e.pEncCtx.AvcodecEncodeVideo2(pEncPkt, pFrame, gotFrame)
-	} else if e.mediaType == libavutil.AvmediaTypeAudio {
-		ret = e.pEncCtx.AvcodecEncodeAudio2(pEncPkt, pFrame, gotFrame)
-	} else {
-		err = fmt.Errorf("Encoder EncodeFrame: unsupported mediaType(%v)", libavutil.AvGetMediaTypeString(e.mediaType))
-		pEncPkt.AvPacketUnref()
-		return
-	}
-	if ret < 0 {
-		err = fmt.Errorf("Encoder EncodeFrame: error(%v)", libavutil.ErrorFromCode(ret))
-		pEncPkt.AvPacketUnref()
-		return
-	}
-	if (*gotFrame) == 0 {
-		pEncPkt.AvPacketUnref()
-		return nil, nil
-	}
-	pEncPkt.SetStreamIndex(e.streamIdx)
-	return
-}
-
 // Send Supply a raw video or audio frame to the encoder.
 // Return io.EOF when ffmpeg return AVERROR(EAGAIN)/AVERROR_EOF
 func (e *Encoder) Send(pFrame *libavutil.AvFrame) (err error) {

@@ -93,43 +93,6 @@ func (d *Decoder) Open(pInStream *libavformat.AvStream) (err error) {
 	return
 }
 
-// DecodePacket Decode packet to frame
-func (d *Decoder) DecodePacket(pPkt *libavcodec.AvPacket) (pFrame *libavutil.AvFrame, gotFrame int, err error) {
-	var (
-		ret int
-	)
-
-	if d.pDecCtx == nil {
-		err = fmt.Errorf("Decoder DecodePacket: codec context is nil")
-		return
-	}
-
-	if pFrame = libavutil.AvFrameAlloc(); pFrame == nil {
-		err = fmt.Errorf("Decoder DecodePacket: failed to alloc memory for frame")
-		return
-	}
-
-	pFrameConvert := (*libavcodec.AvFrame)(unsafe.Pointer(pFrame))
-	if d.mediaType == libavutil.AvmediaTypeVideo {
-		ret = d.pDecCtx.AvcodecDecodeVideo2(pFrameConvert, &gotFrame, pPkt)
-	} else if d.mediaType == libavutil.AvmediaTypeAudio {
-		ret = d.pDecCtx.AvcodecDecodeAudio4(pFrameConvert, &gotFrame, pPkt)
-	} else {
-		err = fmt.Errorf("Decoder DecodePacket: unsupported mediaType(%v)", libavutil.AvGetMediaTypeString(d.mediaType))
-		libavutil.AvFrameFree(pFrame)
-		return
-	}
-	if ret < 0 {
-		err = fmt.Errorf("Decoder DecodePacket: error(%v)", libavutil.ErrorFromCode(ret))
-		libavutil.AvFrameFree(pFrame)
-		return
-	}
-	if gotFrame == 1 {
-		pFrame.SetPts(pFrame.BestEffortTimestamp())
-	}
-	return
-}
-
 // Send Supply raw packet data as input to a decoder.
 func (d *Decoder) Send(pPkt *libavcodec.AvPacket) (err error) {
 	if d.pDecCtx == nil {
