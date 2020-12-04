@@ -280,7 +280,6 @@ func encoderWriteFrame(pFrame *libavutil.AvFrame, stIdx int, gotFrame *int) (err
 
 	// prepare packet for muxer
 	pEncCtx := stCtxs[stIdx].enc.EncCodecContext()
-	pEncPkt.SetStreamIndex(stIdx)
 	pEncPkt.AvPacketRescaleTs(pEncCtx.TimeBase(), mux.OutFormatContext().Streams()[stIdx].TimeBase())
 
 	// mux encoded frame

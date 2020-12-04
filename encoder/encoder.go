@@ -94,5 +94,6 @@ func (e *Encoder) EncodeFrame(pFrame *libavcodec.AvFrame, gotFrame *int) (pEncPk
 		pEncPkt.AvPacketUnref()
 		return nil, nil
 	}
+	pEncPkt.SetStreamIndex(e.streamIdx)
 	return
 }
