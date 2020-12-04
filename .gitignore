@@ -5,3 +5,4 @@ example/remux/remux
 *.mp4
 *.flv
 example/transcode/transcode
+example/vaapi_transcode/vaapi_transcode

@@ -14,6 +14,7 @@ type Decoder struct {
 	pInFmtCtx *libavformat.AvFormatContext
 	pDecCtx   *libavcodec.AvCodecContext
 	mediaType libavutil.AvMediaType
+	streamIdx int
 }
 
 // New create a Decoder
@@ -27,6 +28,11 @@ func New(pInFmtCtx *libavformat.AvFormatContext) *Decoder {
 // DecCodecContext ...
 func (d *Decoder) DecCodecContext() *libavcodec.AvCodecContext {
 	return d.pDecCtx
+}
+
+// StreamIdx Return streamIdx
+func (d *Decoder) StreamIdx() int {
+	return d.streamIdx
 }
 
 // Close ...
@@ -79,6 +85,7 @@ func (d *Decoder) Open(pInStream *libavformat.AvStream) (err error) {
 		return
 	}
 
+	d.streamIdx = pInStream.Index()
 	return
 }
 
@@ -116,5 +123,70 @@ func (d *Decoder) DecodePacket(pPkt *libavcodec.AvPacket) (pFrame *libavutil.AvF
 	if gotFrame == 1 {
 		pFrame.SetPts(pFrame.BestEffortTimestamp())
 	}
+	return
+}
+
+// Send Supply raw packet data as input to a decoder.
+func (d *Decoder) Send(pPkt *libavcodec.AvPacket) (err error) {
+	if d.pDecCtx == nil {
+		err = fmt.Errorf("Decoder Send: codec context is nil")
+		return
+	}
+	/*
+	 * @return 0 on success, otherwise negative error code:
+	 *      AVERROR(EAGAIN):   input is not accepted in the current state - user
+	 *                         must read output with avcodec_receive_frame() (once
+	 *                         all output is read, the packet should be resent, and
+	 *                         the call will not fail with EAGAIN).
+	 *      AVERROR_EOF:       the decoder has been flushed, and no new packets can
+	 *                         be sent to it (also returned if more than 1 flush
+	 *                         packet is sent)
+	 *      AVERROR(EINVAL):   codec not opened, it is an encoder, or requires flush
+	 *      AVERROR(ENOMEM):   failed to add packet to internal queue, or similar
+	 *      other errors: legitimate decoding errors
+	 */
+	if ret := d.pDecCtx.AvcodecSendPacket(pPkt); ret < 0 {
+		err = fmt.Errorf("Decoder Send: error(%v)", libavutil.ErrorFromCode(ret))
+		return
+	}
+	return
+}
+
+// Receive Return decoded output data from a decoder.
+func (d *Decoder) Receive() (pFrame *libavutil.AvFrame, err error) {
+	if d.pDecCtx == nil {
+		err = fmt.Errorf("Decoder Receive: codec context is nil")
+		return
+	}
+
+	if pFrame = libavutil.AvFrameAlloc(); pFrame == nil {
+		err = fmt.Errorf("Decoder Receive: failed to alloc memory for frame")
+		return
+	}
+
+	pFrameConvert := (*libavcodec.AvFrame)(unsafe.Pointer(pFrame))
+	/*
+	 * @return
+	 *      0:                 success, a frame was returned
+	 *      AVERROR(EAGAIN):   output is not available in this state - user must try
+	 *                         to send new input
+	 *      AVERROR_EOF:       the decoder has been fully flushed, and there will be
+	 *                         no more output frames
+	 *      AVERROR(EINVAL):   codec not opened, or it is an encoder
+	 *      other negative values: legitimate decoding errors
+	 */
+	ret := d.pDecCtx.AvcodecReceiveFrame(pFrameConvert)
+	if ret == libavutil.AvErrorEAGAIN || ret == libavutil.AvErrorEOF {
+		goto end
+	}
+	if ret < 0 {
+		err = fmt.Errorf("Decoder Receive: error(%v)", libavutil.ErrorFromCode(ret))
+		goto end
+	}
+	return
+
+end:
+	libavutil.AvFrameFree(pFrame)
+	pFrame = nil
 	return
 }
